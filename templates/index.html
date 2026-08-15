@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Uçuş Kontrol</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"IBM Plex Sans"', 'system-ui', 'sans-serif'],
+            mono: ['"IBM Plex Mono"', 'ui-monospace', 'monospace'],
+          },
+          colors: {
+            ink: '#1c2430',
+            paper: '#f3f1ec',
+            card: '#fffcf7',
+            line: '#ddd8ce',
+            mute: '#6b7280',
+            ocean: '#2f4a63',
+            ok: '#2f6b4f',
+            warn: '#9a6b1f',
+            bad: '#a33b3b',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background:
+        radial-gradient(ellipse 80% 50% at 50% -10%, #e8e4db 0%, transparent 55%),
+        #f3f1ec;
+      color: #1c2430;
+    }
+    .wind-arrow { transition: transform 0.45s ease; transform-origin: center; }
+    .bar-fill { transition: width 0.35s ease; }
+    .tabular { font-variant-numeric: tabular-nums; }
+    input[type=number]::-webkit-inner-spin-button { opacity: 0.4; }
+  </style>
+</head>
+<body class="font-sans antialiased min-h-screen">
+
+  <header class="border-b border-line/80 bg-card/80 backdrop-blur-sm">
+    <div class="max-w-3xl mx-auto px-5 py-5 flex items-start justify-between gap-4">
+      <div>
+        <p class="text-[11px] tracking-[0.14em] uppercase text-mute">Drone · açık hava</p>
+        <h1 class="text-xl font-semibold tracking-tight text-ink mt-1">Uçuş Kontrol</h1>
+      </div>
+      <button id="refreshBtn"
+        class="text-sm text-ocean hover:text-ink mt-1 underline underline-offset-4 decoration-line hover:decoration-ink transition">
+        Yenile
+      </button>
+    </div>
+  </header>
+
+  <main class="max-w-3xl mx-auto px-5 py-8 space-y-5">
+
+    <section class="bg-card border border-line rounded-md p-5 shadow-[0_1px_0_rgba(28,36,48,0.04)]">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label for="latInput" class="block text-sm text-mute mb-1">Enlem</label>
+          <input id="latInput" type="number" step="0.0001" value="{{ default_lat }}"
+            class="w-full bg-paper border border-line rounded-md px-3 py-2 text-sm font-mono tabular focus:outline-none focus:border-ocean/50">
+        </div>
+        <div>
+          <label for="lonInput" class="block text-sm text-mute mb-1">Boylam</label>
+          <input id="lonInput" type="number" step="0.0001" value="{{ default_lon }}"
+            class="w-full bg-paper border border-line rounded-md px-3 py-2 text-sm font-mono tabular focus:outline-none focus:border-ocean/50">
+        </div>
+        <div class="sm:col-span-2">
+          <label for="presetSelect" class="block text-sm text-mute mb-1">Drone</label>
+          <select id="presetSelect"
+            class="w-full bg-paper border border-line rounded-md px-3 py-2 text-sm focus:outline-none focus:border-ocean/50">
+            {% for key, preset in presets.items() %}
+            <option value="{{ key }}" {% if key == 'dji_mavic' %}selected{% endif %}>{{ preset.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="sm:col-span-2 flex flex-col sm:flex-row gap-2">
+          <button id="geoBtn" type="button"
+            class="sm:flex-1 border border-line rounded-md px-3 py-2.5 text-sm text-ink hover:bg-paper transition">
+            Konumumu kullan
+          </button>
+          <button id="analyzeBtn" type="button"
+            class="sm:flex-1 bg-ocean text-white rounded-md px-3 py-2.5 text-sm font-medium hover:bg-ink transition">
+            Kontrol et
+          </button>
+        </div>
+      </div>
+
+      <details class="mt-4 pt-4 border-t border-line">
+        <summary class="text-sm text-mute cursor-pointer hover:text-ink select-none">Özel limitler</summary>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
+          <div>
+            <label class="text-xs text-mute">Rüzgar (km/h)</label>
+            <input id="maxWind" type="number" value="36" class="w-full mt-1 bg-paper border border-line rounded px-2 py-1.5 text-sm font-mono tabular">
+          </div>
+          <div>
+            <label class="text-xs text-mute">Hamle (km/h)</label>
+            <input id="maxGust" type="number" value="50" class="w-full mt-1 bg-paper border border-line rounded px-2 py-1.5 text-sm font-mono tabular">
+          </div>
+          <div>
+            <label class="text-xs text-mute">Yağış (mm)</label>
+            <input id="maxPrecip" type="number" value="0" step="0.1" class="w-full mt-1 bg-paper border border-line rounded px-2 py-1.5 text-sm font-mono tabular">
+          </div>
+          <div>
+            <label class="text-xs text-mute">Bulut (%)</label>
+            <input id="maxCloud" type="number" value="85" class="w-full mt-1 bg-paper border border-line rounded px-2 py-1.5 text-sm font-mono tabular">
+          </div>
+          <div>
+            <label class="text-xs text-mute">Min °C</label>
+            <input id="minTemp" type="number" value="-10" class="w-full mt-1 bg-paper border border-line rounded px-2 py-1.5 text-sm font-mono tabular">
+          </div>
+          <div>
+            <label class="text-xs text-mute">Max °C</label>
+            <input id="maxTemp" type="number" value="40" class="w-full mt-1 bg-paper border border-line rounded px-2 py-1.5 text-sm font-mono tabular">
+          </div>
+          <div>
+            <label class="text-xs text-mute">Yağmur (%)</label>
+            <input id="maxRainProb" type="number" value="30" class="w-full mt-1 bg-paper border border-line rounded px-2 py-1.5 text-sm font-mono tabular">
+          </div>
+        </div>
+      </details>
+    </section>
+
+    <div id="loading" class="hidden text-center py-12">
+      <div class="inline-block w-5 h-5 border-2 border-line border-t-ocean rounded-full animate-spin"></div>
+      <p class="mt-3 text-sm text-mute">Hava verisi alınıyor…</p>
+    </div>
+
+    <div id="error" class="hidden border border-bad/30 bg-bad/5 rounded-md px-4 py-3 text-sm text-bad"></div>
+
+    <div id="dashboard" class="hidden space-y-5">
+
+      <section id="decisionPanel" class="bg-card border border-line rounded-md p-6">
+        <div class="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+          <div class="min-w-0">
+            <p id="locationName" class="text-sm text-mute">—</p>
+            <h2 id="decisionText" class="text-[2rem] leading-none font-semibold mt-2 tracking-tight">—</h2>
+            <p id="decisionSummary" class="text-sm text-mute mt-3 max-w-md leading-relaxed">—</p>
+            <p id="updateTime" class="text-xs text-mute/80 mt-4 font-mono tabular">—</p>
+          </div>
+          <div class="sm:text-right shrink-0 pb-0.5">
+            <p class="text-xs text-mute">Skor</p>
+            <p class="mt-1 font-mono tabular">
+              <span id="safetyScore" class="text-3xl font-medium text-ink">—</span>
+              <span class="text-mute text-sm">/100</span>
+            </p>
+            <div class="w-32 h-1 bg-paper rounded-full mt-3 sm:ml-auto overflow-hidden border border-line">
+              <div id="scoreBar" class="bar-fill h-full rounded-full bg-mute" style="width:0%"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div class="bg-card border border-line rounded-md p-5">
+          <p class="text-sm text-mute">Rüzgar</p>
+          <div class="flex items-center gap-5 mt-3">
+            <svg viewBox="0 0 72 72" class="w-14 h-14 shrink-0" aria-hidden="true">
+              <circle cx="36" cy="36" r="33" fill="none" stroke="#ddd8ce" stroke-width="1"/>
+              <text x="36" y="12" text-anchor="middle" fill="#6b7280" font-size="8" font-family="IBM Plex Sans,sans-serif">K</text>
+              <text x="36" y="66" text-anchor="middle" fill="#6b7280" font-size="8" font-family="IBM Plex Sans,sans-serif">G</text>
+              <text x="64" y="39" text-anchor="middle" fill="#6b7280" font-size="8" font-family="IBM Plex Sans,sans-serif">D</text>
+              <text x="8" y="39" text-anchor="middle" fill="#6b7280" font-size="8" font-family="IBM Plex Sans,sans-serif">B</text>
+              <g id="windArrow" class="wind-arrow" transform="rotate(0 36 36)">
+                <line x1="36" y1="36" x2="36" y2="16" stroke="#2f4a63" stroke-width="1.75" stroke-linecap="round"/>
+                <polygon points="36,14 33,21 39,21" fill="#2f4a63"/>
+              </g>
+              <circle cx="36" cy="36" r="2" fill="#2f4a63"/>
+            </svg>
+            <div>
+              <p class="font-mono tabular">
+                <span id="windSpeed" class="text-3xl font-medium">—</span>
+                <span class="text-mute text-sm">km/h</span>
+              </p>
+              <p class="text-xs text-mute mt-1">
+                Yön <span id="windDir" class="font-mono tabular">—</span>°
+                · limit <span id="windLimit" class="font-mono tabular">—</span>
+              </p>
+            </div>
+          </div>
+          <div class="mt-4 h-10 flex items-end gap-0.5" id="windChart" aria-hidden="true"></div>
+        </div>
+
+        <div class="bg-card border border-line rounded-md p-5">
+          <p class="text-sm text-mute">Hamle</p>
+          <p class="mt-3 font-mono tabular">
+            <span id="gustSpeed" class="text-3xl font-medium">—</span>
+            <span class="text-mute text-sm">km/h</span>
+          </p>
+          <p class="text-xs text-mute mt-1">Limit <span id="gustLimit" class="font-mono tabular">—</span></p>
+          <div class="mt-4 h-10 flex items-end gap-0.5" id="gustChart" aria-hidden="true"></div>
+        </div>
+
+        <div class="bg-card border border-line rounded-md p-5 sm:col-span-2">
+          <div class="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p class="text-sm text-mute">Sıcaklık</p>
+              <p class="mt-2 font-mono tabular">
+                <span id="temperature" class="text-3xl font-medium">—</span>
+                <span class="text-mute text-sm">°C</span>
+              </p>
+              <p class="text-xs text-mute mt-1">Hissedilen <span id="feelsLike" class="font-mono tabular">—</span>°</p>
+            </div>
+            <dl class="grid grid-cols-2 sm:grid-cols-4 gap-x-8 gap-y-3 text-sm">
+              <div>
+                <dt class="text-xs text-mute">Nem</dt>
+                <dd id="humidity" class="font-mono tabular mt-0.5">—</dd>
+              </div>
+              <div>
+                <dt class="text-xs text-mute">Bulut</dt>
+                <dd id="cloudCover" class="font-mono tabular mt-0.5">—</dd>
+              </div>
+              <div>
+                <dt class="text-xs text-mute">Basınç</dt>
+                <dd id="pressure" class="font-mono tabular mt-0.5">—</dd>
+              </div>
+              <div>
+                <dt class="text-xs text-mute">Durum</dt>
+                <dd id="weatherLabel" class="mt-0.5">—</dd>
+              </div>
+            </dl>
+          </div>
+        </div>
+      </div>
+
+      <section class="bg-card border border-line rounded-md p-5">
+        <h3 class="text-sm font-medium text-ink mb-1">Kontroller</h3>
+        <p class="text-xs text-mute mb-3">Drone limitlerine göre tek tek karşılaştırma</p>
+        <div id="checksList" class="divide-y divide-line"></div>
+      </section>
+
+      <section class="bg-card border border-line rounded-md p-5">
+        <h3 class="text-sm font-medium text-ink mb-1">Önümüzdeki 12 saat</h3>
+        <p class="text-xs text-mute mb-4">Rüzgar, hamle ve yağmur olasılığı</p>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-left text-xs text-mute">
+                <th class="pb-2 pr-5 font-normal">Saat</th>
+                <th class="pb-2 pr-5 font-normal">Rüzgar</th>
+                <th class="pb-2 pr-5 font-normal">Hamle</th>
+                <th class="pb-2 font-normal">Yağmur</th>
+              </tr>
+            </thead>
+            <tbody id="hourlyTable" class="font-mono tabular text-[13px]"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="max-w-3xl mx-auto px-5 pb-10 pt-2 text-xs text-mute leading-relaxed">
+    Veri: <a href="https://open-meteo.com" class="text-ocean underline underline-offset-2" target="_blank" rel="noopener">Open-Meteo</a>.
+    Sonuçlar yalnızca bilgilendirme amaçlıdır; yasal ve yerel kurallara uyun.
+  </footer>
+
+  <script>
+    const PRESETS = {{ presets | tojson }};
+    const $ = id => document.getElementById(id);
+    const DECISION_LABEL = { GO: 'Uçabilir', CAUTION: 'Dikkatli ol', 'NO-GO': 'Uçma' };
+
+    function applyPresetLimits(key) {
+      const p = PRESETS[key];
+      if (!p) return;
+      $('maxWind').value = p.max_wind_kmh;
+      $('maxGust').value = p.max_gust_kmh;
+      $('maxPrecip').value = p.max_precip_mm;
+      $('maxCloud').value = p.max_cloud_cover;
+      $('minTemp').value = p.min_temp_c;
+      $('maxTemp').value = p.max_temp_c;
+      $('maxRainProb').value = p.max_rain_probability;
+    }
+
+    $('presetSelect').addEventListener('change', e => applyPresetLimits(e.target.value));
+
+    function buildQueryParams() {
+      const params = new URLSearchParams({
+        lat: $('latInput').value,
+        lon: $('lonInput').value,
+        preset: $('presetSelect').value,
+      });
+      if ($('presetSelect').value === 'custom') {
+        params.set('custom', '1');
+        params.set('max_wind', $('maxWind').value);
+        params.set('max_gust', $('maxGust').value);
+        params.set('max_precip', $('maxPrecip').value);
+        params.set('max_cloud', $('maxCloud').value);
+        params.set('min_temp', $('minTemp').value);
+        params.set('max_temp', $('maxTemp').value);
+        params.set('max_rain_prob', $('maxRainProb').value);
+      }
+      return params;
+    }
+
+    function decisionStyle(decision) {
+      return {
+        GO:      { border: 'border-ok/30', bg: 'bg-ok/[0.06]', text: 'text-ok', bar: 'bg-ok' },
+        CAUTION: { border: 'border-warn/30', bg: 'bg-warn/[0.07]', text: 'text-warn', bar: 'bg-warn' },
+        'NO-GO': { border: 'border-bad/30', bg: 'bg-bad/[0.06]', text: 'text-bad', bar: 'bg-bad' },
+      }[decision] || {
+        border: 'border-line', bg: 'bg-card', text: 'text-ink', bar: 'bg-mute'
+      };
+    }
+
+    function statusDot(s) {
+      return { pass: 'bg-ok', warn: 'bg-warn', fail: 'bg-bad' }[s] || 'bg-mute';
+    }
+
+    function renderMiniChart(containerId, values, maxVal, color) {
+      const el = $(containerId);
+      el.innerHTML = '';
+      if (!values.length) return;
+      const max = Math.max(...values, maxVal, 1);
+      values.forEach(v => {
+        const bar = document.createElement('div');
+        bar.className = 'flex-1 rounded-[1px]';
+        bar.style.height = `${Math.max((v / max) * 100, 3)}%`;
+        bar.style.backgroundColor = v > maxVal ? '#a33b3b' : color;
+        bar.title = `${v} km/h`;
+        el.appendChild(bar);
+      });
+    }
+
+    function renderDashboard(data) {
+      const { location, current, hourly, analysis, limits } = data;
+      const style = decisionStyle(analysis.decision);
+
+      $('decisionPanel').className = `rounded-md p-6 border ${style.border} ${style.bg}`;
+      $('locationName').textContent = location.name;
+      $('decisionText').className = `text-[2rem] leading-none font-semibold mt-2 tracking-tight ${style.text}`;
+      $('decisionText').textContent = DECISION_LABEL[analysis.decision] || analysis.decision;
+      $('decisionSummary').textContent = analysis.summary;
+      $('updateTime').textContent = current.time ? `Ölçüm: ${current.time}` : '';
+      $('safetyScore').textContent = analysis.score;
+      $('scoreBar').style.width = `${analysis.score}%`;
+      $('scoreBar').className = `bar-fill h-full rounded-full ${style.bar}`;
+
+      const dir = current.wind_direction_10m || 0;
+      $('windArrow').setAttribute('transform', `rotate(${dir} 36 36)`);
+      $('windDir').textContent = Math.round(dir);
+      $('windSpeed').textContent = current.wind_speed_10m ?? '—';
+      $('gustSpeed').textContent = current.wind_gusts_10m ?? '—';
+      $('windLimit').textContent = limits.max_wind_kmh;
+      $('gustLimit').textContent = limits.max_gust_kmh;
+
+      $('temperature').textContent = current.temperature_2m ?? '—';
+      $('feelsLike').textContent = current.apparent_temperature ?? '—';
+      $('humidity').textContent = `${current.relative_humidity_2m ?? '—'}%`;
+      $('cloudCover').textContent = `${current.cloud_cover ?? '—'}%`;
+      $('pressure').textContent = `${Math.round(current.surface_pressure ?? 0)} hPa`;
+
+      const wxCheck = analysis.checks.find(c => c.parameter === 'weather_code');
+      $('weatherLabel').textContent = wxCheck ? wxCheck.value : '—';
+
+      renderMiniChart('windChart', hourly.wind_speed_10m || [], limits.max_wind_kmh, '#8a9aab');
+      renderMiniChart('gustChart', hourly.wind_gusts_10m || [], limits.max_gust_kmh, '#c4bdb0');
+
+      $('checksList').innerHTML = analysis.checks.map(c => `
+        <div class="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+          <span class="w-1.5 h-1.5 rounded-full shrink-0 ${statusDot(c.status)}"></span>
+          <div class="flex-1 min-w-0">
+            <p class="text-sm text-ink">${c.label}</p>
+            <p class="text-xs text-mute mt-0.5">Limit ${c.limit}</p>
+          </div>
+          <p class="text-sm font-mono tabular shrink-0">${c.value}${c.unit ? ' ' + c.unit : ''}</p>
+        </div>
+      `).join('');
+
+      $('hourlyTable').innerHTML = (hourly.time || []).map((t, i) => {
+        const time = new Date(t).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+        const w = hourly.wind_speed_10m[i] ?? '—';
+        const g = hourly.wind_gusts_10m[i] ?? '—';
+        const r = hourly.precipitation_probability[i] ?? '—';
+        const wClass = w > limits.max_wind_kmh ? 'text-bad font-medium' : 'text-ink';
+        const gClass = g > limits.max_gust_kmh ? 'text-bad font-medium' : 'text-ink';
+        const rClass = r > 30 ? 'text-warn' : 'text-ink';
+        return `<tr class="border-t border-line">
+          <td class="py-2.5 pr-5 text-mute">${time}</td>
+          <td class="py-2.5 pr-5 ${wClass}">${w}</td>
+          <td class="py-2.5 pr-5 ${gClass}">${g}</td>
+          <td class="py-2.5 ${rClass}">${r}%</td>
+        </tr>`;
+      }).join('');
+
+      $('dashboard').classList.remove('hidden');
+    }
+
+    async function analyze() {
+      $('loading').classList.remove('hidden');
+      $('error').classList.add('hidden');
+      $('dashboard').classList.add('hidden');
+
+      try {
+        const resp = await fetch(`/api/analyze?${buildQueryParams()}`);
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || 'Bir hata oluştu');
+        renderDashboard(data);
+      } catch (err) {
+        $('error').textContent = err.message;
+        $('error').classList.remove('hidden');
+      } finally {
+        $('loading').classList.add('hidden');
+      }
+    }
+
+    $('analyzeBtn').addEventListener('click', analyze);
+    $('refreshBtn').addEventListener('click', analyze);
+
+    $('geoBtn').addEventListener('click', () => {
+      if (!navigator.geolocation) {
+        $('error').textContent = 'Konum servisi kullanılamıyor.';
+        $('error').classList.remove('hidden');
+        return;
+      }
+      $('geoBtn').textContent = 'Alınıyor…';
+      $('geoBtn').disabled = true;
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          $('latInput').value = pos.coords.latitude.toFixed(4);
+          $('lonInput').value = pos.coords.longitude.toFixed(4);
+          $('geoBtn').textContent = 'Konumumu kullan';
+          $('geoBtn').disabled = false;
+          analyze();
+        },
+        () => {
+          $('geoBtn').textContent = 'Konumumu kullan';
+          $('geoBtn').disabled = false;
+          $('error').textContent = 'Konum alınamadı.';
+          $('error').classList.remove('hidden');
+        }
+      );
+    });
+
+    applyPresetLimits('dji_mavic');
+    analyze();
+  </script>
+</body>
+</html>
