@@ -1,25 +1,32 @@
 # Uçuş Kontrol
 
-Open-Meteo'dan anlık hava çekip drone uçuşuna uygun mu diye bakıyor. Konum giriyorsun (veya tarayıcıdan alıyorsun), drone tipini seçiyorsun, sonuç geliyor: uçabilir / dikkatli ol / uçma.
+Open-Meteo API üzerinden anlık ve kısa vadeli hava durumu verilerini alan, drone / İHA uçuş uygunluğunu değerlendiren bir Flask uygulamasıdır.
 
-## Çalıştırma
+Konum bilgisi (manuel koordinat veya tarayıcı konumu) ve seçilen drone limitleri doğrultusunda rüzgar, hamle, yağış ve ilgili meteorolojik parametreler analiz edilir; sonuç **Uçabilir**, **Dikkatli ol** veya **Uçma** şeklinde sunulur.
+
+## Gereksinimler
+
+- Python 3.10 veya üzeri
+- İnternet bağlantısı (Open-Meteo; konum adı için isteğe bağlı OpenStreetMap Nominatim)
+
+## Kurulum
 
 ```bash
 pip install -r requirements.txt
 python app.py
 ```
 
-Sonra: http://127.0.0.1:5000
+Uygulama varsayılan olarak [http://127.0.0.1:5000](http://127.0.0.1:5000) adresinde çalışır.
 
-Python 3.10+ lazım, internet de lazım.
+## Proje Yapısı
 
-## Dosyalar
-
-- `app.py` — Flask + API
-- `weather_service.py` — Open-Meteo
-- `flight_analyzer.py` — go/no-go mantığı
-- `http_client.py` — SSL işleri (Windows'ta bazen takılıyor)
-- `templates/index.html` — arayüz
+| Dosya | Açıklama |
+|-------|----------|
+| `app.py` | Flask uygulaması ve `/api/analyze` uç noktası |
+| `weather_service.py` | Open-Meteo hava verisi ve ters geokodlama |
+| `flight_analyzer.py` | Uçuş uygunluk değerlendirme kuralları |
+| `http_client.py` | HTTPS istekleri ve SSL uyumluluk katmanı |
+| `templates/index.html` | Kullanıcı arayüzü |
 
 ## API
 
@@ -27,18 +34,30 @@ Python 3.10+ lazım, internet de lazım.
 GET /api/analyze?lat=41.0082&lon=28.9784&preset=dji_mavic
 ```
 
-preset: `dji_mini`, `dji_mavic`, `dji_inspire`, `fpv_racing`, `custom`
+| Parametre | Açıklama |
+|-----------|----------|
+| `lat`, `lon` | WGS84 koordinatları |
+| `preset` | `dji_mini`, `dji_mavic`, `dji_inspire`, `fpv_racing`, `custom` |
+| `custom=1` | Özel limit kullanımı (`max_wind`, `max_gust`, `max_precip` vb.) |
 
-custom için `custom=1` + `max_wind`, `max_gust` vs. gönderebilirsin.
+Yanıt JSON formatındadır: konum, anlık hava verisi, saatlik tahmin, analiz sonucu (karar, skor, kontroller).
 
-## Karar
+## Değerlendirme Kriterleri
 
-- **Uçabilir** — her şey limit içinde
-- **Dikkatli ol** — sınıra yakın
-- **Uçma** — limit aşımı, yağış veya kötü hava
+| Karar | Anlamı |
+|-------|--------|
+| **Uçabilir** | Tüm parametreler tanımlı limitler içinde |
+| **Dikkatli ol** | Parametreler sınıra yakın |
+| **Uçma** | Limit aşımı, yağış veya olumsuz hava kodu |
 
-Örnek Mavic limitleri: rüzgar 36 km/h, hamle 50 km/h, yağış 0.
+Örnek (Mavic sınıfı): azami rüzgar 36 km/h, azami hamle 50 km/h, yağış 0 mm.
 
-Bu araç sadece fikir verir. Gerçek uçuşta kendi kararın, kurallar ve NOTAM geçerli.
+## Sorumluluk Reddi
 
-Hava verisi Open-Meteo'dan (ücretsiz, key yok).
+Bu yazılım yalnızca bilgilendirme amaçlıdır. Yasal düzenlemelerin, NOTAM bilgilerinin veya pilotun operasyonel kararının yerini tutmaz.
+
+Hava verisi [Open-Meteo](https://open-meteo.com) üzerinden sağlanmaktadır.
+
+## Lisans
+
+Kişisel ve eğitim amaçlı kullanım için serbesttir.
